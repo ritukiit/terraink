@@ -93,11 +93,11 @@ export function useExport() {
       return;
     }
 
-    // Prompt cadence: follow → 1, 5, 10, 15, … (first download + multiples of 5).
+    // Prompt cadence: follow on the first download and every 5th after → 1, 6, 11, …
     // Donate lives in the header; ad interstitials are handled by Google's
     // vignette/Offerwall, not a custom modal.
     let variant: SupportPromptVariant | null = null;
-    if (nextCount === 1 || nextCount % 5 === 0) variant = "follow";
+    if ((nextCount - 1) % 5 === 0) variant = "follow";
 
     if (variant) {
       window.dispatchEvent(

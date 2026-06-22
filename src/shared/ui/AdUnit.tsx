@@ -10,8 +10,6 @@ interface AdUnitProps {
   className?: string;
 }
 
-const HIDE_AFTER_MS = 10_000;
-
 export default function AdUnit({
   slot,
   enabled = true,
@@ -25,40 +23,46 @@ export default function AdUnit({
 
   useEffect(() => {
     if (!enabled || !slot || !ADSENSE_AD_CLIENT) return;
+    const ins = insRef.current;
+    if (!ins) return;
 
-    // Push the ad unit — only once per mount
-    if (!pushed.current) {
+    let statusObserver: MutationObserver | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
+    // AdSense rejects a slot pushed at width 0 ("availableWidth=0") and never
+    // retries it. Only push once the slot has a real width, then watch the
+    // data-ad-status AdSense writes and hide only on an explicit "unfilled".
+    const pushWhenSized = () => {
+      if (pushed.current || ins.offsetWidth === 0) return;
       pushed.current = true;
+      resizeObserver?.disconnect();
+
       try {
         ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
       } catch {
         // ignore — ad blocker or script not yet loaded
       }
+
+      statusObserver = new MutationObserver(() => {
+        if (ins.getAttribute("data-ad-status") === "unfilled") setHidden(true);
+      });
+      statusObserver.observe(ins, {
+        attributes: true,
+        attributeFilter: ["data-ad-status"],
+      });
+    };
+
+    // Push now if already visible; otherwise wait for the panel to gain width
+    // (e.g. a collapsed/off-screen section becoming visible).
+    pushWhenSized();
+    if (!pushed.current) {
+      resizeObserver = new ResizeObserver(pushWhenSized);
+      resizeObserver.observe(ins);
     }
 
-    const ins = insRef.current;
-    if (!ins) return;
-
-    // Watch for Google inserting an iframe — if it does, the ad is filled.
-    // Cancel the timeout so the slot is never hidden.
-    const observer = new MutationObserver(() => {
-      if (ins.childElementCount > 0) {
-        clearTimeout(timer);
-        observer.disconnect();
-      }
-    });
-    observer.observe(ins, { childList: true });
-
-    // After 10s, if still empty, hide the whole slot (label + ins).
-    // This only runs if the observer never detected a fill.
-    const timer = setTimeout(() => {
-      observer.disconnect();
-      if (ins.childElementCount === 0) setHidden(true);
-    }, HIDE_AFTER_MS);
-
     return () => {
-      clearTimeout(timer);
-      observer.disconnect();
+      resizeObserver?.disconnect();
+      statusObserver?.disconnect();
     };
   }, [enabled, slot]);
 
